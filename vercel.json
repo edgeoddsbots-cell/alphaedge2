@@ -1,0 +1,23 @@
+{
+  "rewrites": [
+    { "source": "/api/poly", "destination": "/api/poly" },
+    { "source": "/api/codes", "destination": "/api/codes" },
+    { "source": "/api/signal", "destination": "/api/signal" },
+    { "source": "/api/bot", "destination": "/api/bot" },
+    { "source": "/api/profile", "destination": "/api/profile" }
+  ],
+  "crons": [
+    {
+      "path": "/api/bot",
+      "schedule": "* * * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}
