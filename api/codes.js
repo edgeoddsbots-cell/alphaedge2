@@ -27,7 +27,9 @@ module.exports = async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
-  const { action, code, deviceId, adminCode, plan, count } = req.body || req.query || {};
+  // Merge body and query so DELETE with query params works
+  const params = { ...(req.query || {}), ...(req.body || {}) };
+  const { action, code, deviceId, adminCode, plan, count } = params;
 
   // ── VALIDATE — check if code is valid and lock to device ──
   if (req.method === 'POST' && action === 'validate') {
@@ -113,7 +115,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // ── DELETE — admin only ──
+  // ── DELETE — revoke code (marks as revoked, kicks user instantly) ──
   if (req.method === 'DELETE') {
     if (!adminCode || adminCode.toUpperCase() !== ADMIN_CODE) {
       res.status(403).json({ error: 'Unauthorized' }); return;
@@ -121,10 +123,43 @@ module.exports = async function handler(req, res) {
     const id = req.query.id;
     if (!id) { res.status(400).json({ error: 'no id' }); return; }
     try {
-      await supa(`codes?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
-      res.status(200).json({ deleted: true });
+      // Mark as revoked (faster than delete, user gets kicked on next poll)
+      await supa(`codes?id=eq.${id}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: JSON.stringify({ revoked: true }),
+      });
+      res.status(200).json({ revoked: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+    return;
+  }
+
+  // ── CHECK — frontend polls every 60s to verify key still valid ──
+  if (req.method === 'GET' && action === 'check') {
+    const code = req.query.code;
+    if (!code) { res.status(400).json({ valid: false }); return; }
+    const upper = code.toUpperCase();
+    if (upper === ADMIN_CODE) {
+      res.status(200).json({ valid: true, role: 'admin' });
+      return;
+    }
+    try {
+      const rows = await supa(`codes?code=eq.${encodeURIComponent(upper)}&select=id,revoked,plan&limit=1`);
+      if (!rows || rows.length === 0) {
+        res.status(200).json({ valid: false, reason: 'not_found' });
+        return;
+      }
+      const row = rows[0];
+      if (row.revoked) {
+        res.status(200).json({ valid: false, reason: 'revoked' });
+        return;
+      }
+      res.status(200).json({ valid: true, plan: row.plan });
+    } catch (e) {
+      // On error, keep user logged in (don't kick on network issues)
+      res.status(200).json({ valid: true, error: e.message });
     }
     return;
   }
