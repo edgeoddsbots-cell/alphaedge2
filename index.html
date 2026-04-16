@@ -631,7 +631,6 @@ const CFG={
   THRESHOLD:0.60,CVD_THRESH:0.55,PERSIST_NEED:8,PERSIST_WIN:10,
   COOLDOWN_MS:15000,MIN_MOMENTUM:0.01,NO_TRADE_STD:0.018,
   ENTRY_MIN:15,ENTRY_MAX:240,CANDLE_SEC:300,SWEEP_THRESH:0.08,
-  ADMIN_CODE:'AE-ADMIN-0000',
   BASE_CODES:[],
   CODES_KEY:'ae_codes_v1',PM_KEY:'ae_pm_v1'
 };
@@ -651,11 +650,7 @@ async function doLogin(){
   const err=m=>{const e=document.getElementById('lerr');e.textContent=m;setTimeout(()=>e.textContent='',3500);};
   if(!v){err('Enter your license key.');return;}
   
-  // Admin shortcut - no API call needed
-  if(v===CFG.ADMIN_CODE){
-    sessionStorage.setItem('ae_s',JSON.stringify({code:v,role:'admin',dev:DEV}));
-    showApp(true);return;
-  }
+  // Admin validated server-side via /api/codes
   
   if(btn){btn.textContent='Checking...';btn.disabled=true;}
   try{
@@ -702,8 +697,7 @@ function doLogout(){sessionStorage.removeItem('ae_s');document.getElementById('a
   if(!s)return;
   try{
     const d=JSON.parse(s);
-    // Admin always valid
-    if(d.code&&d.code.toUpperCase()==='AE-ADMIN-0000'){showApp(true);return;}
+    // Admin validated server-side
     // Check key validity in DB before showing app
     try{
       const r=await fetch('/api/codes?action=check&code='+encodeURIComponent(d.code),{signal:AbortSignal.timeout(4000)});
@@ -1274,7 +1268,7 @@ async function checkSessionValid() {
   try {
     const sess = JSON.parse(sessionStorage.getItem('ae_s') || '{}');
     if (!sess.code) return;
-    if (sess.code.toUpperCase() === 'AE-ADMIN-0000') return; // admin always valid
+    // admin validity checked server-side
     const r = await fetch('/api/codes?action=check&code=' + encodeURIComponent(sess.code), {
       signal: AbortSignal.timeout(5000)
     });
@@ -1439,8 +1433,7 @@ function startPolyFetch() {
   if(!s)return;
   try{
     const d=JSON.parse(s);
-    // Admin always valid
-    if(d.code&&d.code.toUpperCase()==='AE-ADMIN-0000'){showApp(true);return;}
+    // Admin validated server-side
     // Check key validity in DB before showing app
     try{
       const r=await fetch('/api/codes?action=check&code='+encodeURIComponent(d.code),{signal:AbortSignal.timeout(4000)});
