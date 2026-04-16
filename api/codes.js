@@ -49,6 +49,12 @@ module.exports = async function handler(req, res) {
         return;
       }
       const row = rows[0];
+
+      // Check if revoked
+      if (row.revoked) {
+        res.status(200).json({ valid: false, error: 'This license key has been revoked' });
+        return;
+      }
       
       // Check device lock
       if (row.device_id && row.device_id !== deviceId) {
