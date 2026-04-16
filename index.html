@@ -697,7 +697,28 @@ function showApp(isAdmin){
   initApp();
 }
 function doLogout(){sessionStorage.removeItem('ae_s');document.getElementById('app').style.display='none';document.getElementById('login').style.display='flex';document.body.classList.remove('app-active');stopAll();loadLastTrades();}
-(function(){const s=sessionStorage.getItem('ae_s');if(s){try{const d=JSON.parse(s);showApp(d.role==='admin');}catch(e){}}})();
+(async function(){
+  const s=sessionStorage.getItem('ae_s');
+  if(!s)return;
+  try{
+    const d=JSON.parse(s);
+    // Admin always valid
+    if(d.code&&d.code.toUpperCase()==='AE-ADMIN-0000'){showApp(true);return;}
+    // Check key validity in DB before showing app
+    try{
+      const r=await fetch('/api/codes?action=check&code='+encodeURIComponent(d.code),{signal:AbortSignal.timeout(4000)});
+      const resp=await r.json();
+      if(resp.valid===false){
+        // Key revoked or deleted - clear session
+        sessionStorage.removeItem('ae_s');
+        return;
+      }
+    }catch(e){
+      // Network error - show app anyway (don't block on network issues)
+    }
+    showApp(d.role==='admin');
+  }catch(e){}
+})();
 
 // ─── PLANS/CRYPTO ───
 let curPlan='lifetime';
@@ -1243,8 +1264,9 @@ function initApp(){
   // Poll shared server signal every 10s
   pollSharedSignal();
   setInterval(pollSharedSignal, 10000);
-  // Check session validity every 60s (catches revoked keys)
-  setInterval(checkSessionValid, 60000);
+  // Check session validity every 30s (catches revoked keys)
+  checkSessionValid(); // also check immediately on load
+  setInterval(checkSessionValid, 30000);
 }
 
 // ── Session validity check ──
@@ -1412,7 +1434,28 @@ function startPolyFetch() {
 
 
 // ── Auto-login if session exists ──
-(function(){const s=sessionStorage.getItem('ae_s');if(s){try{const d=JSON.parse(s);showApp(d.role==='admin');}catch(e){}}})();
+(async function(){
+  const s=sessionStorage.getItem('ae_s');
+  if(!s)return;
+  try{
+    const d=JSON.parse(s);
+    // Admin always valid
+    if(d.code&&d.code.toUpperCase()==='AE-ADMIN-0000'){showApp(true);return;}
+    // Check key validity in DB before showing app
+    try{
+      const r=await fetch('/api/codes?action=check&code='+encodeURIComponent(d.code),{signal:AbortSignal.timeout(4000)});
+      const resp=await r.json();
+      if(resp.valid===false){
+        // Key revoked or deleted - clear session
+        sessionStorage.removeItem('ae_s');
+        return;
+      }
+    }catch(e){
+      // Network error - show app anyway (don't block on network issues)
+    }
+    showApp(d.role==='admin');
+  }catch(e){}
+})();
 
 // ── Init WR for non-logged-in visitors ──
 (function(){
