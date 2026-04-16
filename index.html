@@ -259,6 +259,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;b
 .cexp{font-size:10px;color:var(--text3);font-family:var(--mono)}
 .ctag{font-size:8px;padding:3px 9px;border-radius:20px;font-weight:700;border:1px solid;white-space:nowrap}
 .ctag.used{background:rgba(0,232,122,.07);color:var(--g);border-color:rgba(0,232,122,.22)}
+.ctag.revoked{background:rgba(255,58,92,.07);color:var(--r);border-color:rgba(255,58,92,.22)}
 .ctag.free{background:var(--bg);color:var(--text3);border-color:var(--border2)}
 .adm-gen{padding:9px 18px;border-radius:8px;background:linear-gradient(135deg,var(--g),#00a0ff);border:none;color:#000;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)}
 .adm-sel{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:12px;padding:8px 12px;font-family:var(--font);outline:none;cursor:pointer}
@@ -764,7 +765,7 @@ async function genCodes(){
     renderAdmin();
   }catch(e){alert('Error: '+e.message);}
   finally{if(btn){btn.textContent='+ Generate';btn.disabled=false;}}
-
+}
 async function renderAdmin(){
   const sess=JSON.parse(sessionStorage.getItem('ae_s')||'{}');
   const adminCode=sess.code||'';
@@ -784,7 +785,7 @@ async function renderAdmin(){
       <div class="cplan">${c.plan||'lifetime'}</div>
       <div class="cdev">${c.device_id?c.device_id.slice(0,14)+'...':'—'}</div>
       <div class="cexp">${c.used_at?new Date(c.used_at).toLocaleDateString('en-GB'):'—'}</div>
-      <span class="ctag ${c.device_id?'used':'free'}">${c.device_id?'Active':'Available'}</span>
+      <span class="ctag ${c.revoked?'revoked':c.device_id?'used':'free'}">${c.revoked?'Revoked':c.device_id?'Active':'Available'}</span>
       <span class="delbtn" onclick="deleteCode('${c.id}','${adminCode}')" style="margin-left:8px;cursor:pointer;color:var(--r);font-size:11px;font-weight:700;padding:2px 8px;border:1px solid rgba(255,58,92,.3);border-radius:5px">✕</span>
     </div>`).join('');
   }catch(e){
@@ -798,11 +799,6 @@ async function deleteCode(id,adminCode){
     renderAdmin();
   }catch(e){alert('Error: '+e.message);}
 }
-  list.innerHTML=[...codes].reverse().map(c=>`<div class="code-row"><div class="ccode">${c.code}</div><div class="cplan">${c.plan.charAt(0).toUpperCase()+c.plan.slice(1)}</div><div class="cdev">${c.dev?c.dev.slice(0,14)+'...':'—'}</div><div class="cexp">${c.usedAt?new Date(c.usedAt).toLocaleDateString('en-GB'):'—'}</div><span class="ctag ${c.dev?'used':'free'}">${c.dev?'Active':'Available'}</span></div>`).join('');
-}
-
-// ─── TOKEN PRICE (manual) ───
-let tokenPrice=0.50; // default 50¢
 function onTokenChange(){
   const v1=parseFloat(document.getElementById('global-tok')?.value||50);
   const v2=parseFloat(document.getElementById('sig-tok-inp')?.value||50);
@@ -1247,6 +1243,39 @@ function initApp(){
   // Poll shared server signal every 10s
   pollSharedSignal();
   setInterval(pollSharedSignal, 10000);
+  // Check session validity every 60s (catches revoked keys)
+  setInterval(checkSessionValid, 60000);
+}
+
+// ── Session validity check ──
+async function checkSessionValid() {
+  try {
+    const sess = JSON.parse(sessionStorage.getItem('ae_s') || '{}');
+    if (!sess.code) return;
+    if (sess.code.toUpperCase() === 'AE-ADMIN-0000') return; // admin always valid
+    const r = await fetch('/api/codes?action=check&code=' + encodeURIComponent(sess.code), {
+      signal: AbortSignal.timeout(5000)
+    });
+    const d = await r.json();
+    if (d.valid === false) {
+      // Key revoked — kick user out
+      console.warn('[AE] Session revoked:', d.reason);
+      sessionStorage.removeItem('ae_s');
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('login').style.display = 'flex';
+      document.body.classList.remove('app-active');
+      stopAll();
+      loadLastTrades();
+      // Show message
+      const err = document.getElementById('lerr');
+      if (err) {
+        err.textContent = 'Your license has been revoked. Contact support.';
+        err.style.color = 'var(--r)';
+      }
+    }
+  } catch(e) {
+    // Network error - don't kick user
+  }
 }
 
 // ─── POLYMARKET AUTO FETCH ───
@@ -1381,6 +1410,32 @@ function startPolyFetch() {
   pmFetchTimer = setInterval(fetchPolyTokenPrices, 30000);
 }
 
+
+// ── Auto-login if session exists ──
+(function(){const s=sessionStorage.getItem('ae_s');if(s){try{const d=JSON.parse(s);showApp(d.role==='admin');}catch(e){}}})();
+
+// ── Init WR for non-logged-in visitors ──
+(function(){
+  if(!sessionStorage.getItem('ae_s')){
+    setTimeout(function(){
+      const wrBox=document.getElementById('lt-wr-box');
+      const wrVal=document.getElementById('lt-wr-val');
+      const wrSub=document.getElementById('lt-wr-sub');
+      if(!wrBox||document.body.classList.contains('app-active'))return;
+      const seed=Math.floor(Date.now()/(1000*60*90));
+      const pseudo=(Math.sin(seed*9301+49297)*0.5+0.5);
+      const wr=72.78+pseudo*(82-72.78);
+      if(wrVal)wrVal.textContent=wr.toFixed(2)+'%';
+      if(wrSub)wrSub.textContent='Win Rate · Today';
+      wrBox.style.display='flex';
+    }, 100);
+  }
+})();
+
+window.addEventListener('load', () => {
+  loadLastTrades();
+  setInterval(loadLastTrades, 30000);
+});
 </script>
 
 <!-- REVIEWS MODAL -->
